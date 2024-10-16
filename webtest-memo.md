@@ -284,3 +284,126 @@ describe("ShoppingList 解答", () => {
   });
 });
 ```
+
+## jest を使ったモックテスト
+
+### モックの概要
+
+実際のオブジェクトや機能を模倣したもの
+
+外部の API とか
+
+外部の依存要因を排除する
+
+特定のシナリオをシュミレート
+
+テストの速度向上
+
+似た概念のスパイ
+
+既存の関数やメソッドの呼び出しを監視する
+
+関数やメソッドがいつ何回呼び出されたかを知ることができる
+
+モックとの最大の違いは、スパイは実際の振る舞いを置き換えない（※置き換えることもできるけど）
+
+### jest によるモック関数の作成
+
+### モック関数の戻り値の設定
+
+```ts
+it("モック関数に戻り値を設定する", () => {
+  const mockFunc = jest.fn();
+  mockFunc.mockReturnValue("Mock return value");
+  expect(mockFunc()).toBe("Mock return value");
+});
+
+it("モック関数一度だけ返される戻り値を設定する", () => {
+  const mockFunc = jest.fn();
+  mockFunc.mockReturnValueOnce("Mock return value");
+  expect(mockFunc()).toBe("Mock return value");
+  // 2回目はundefined
+  expect(mockFunc()).toBe(undefined);
+});
+
+it("モック関数に非同期な戻り値を設定する", async () => {
+  const mockFunc = jest.fn();
+  mockFunc.mockResolvedValue("Resolved value");
+  const result = await mockFunc();
+  expect(result).toBe("Resolved value");
+});
+```
+
+### モック関数の呼び出しの検証
+
+API 呼び出しやデータベースへの書き込みなど、副作用を含むテストはユニットテストではモックされる
+
+### spyOn を使用した関数のモック化
+
+```ts
+import { Calculator } from "./mock_spy";
+
+it("sumメソッドが呼び出される", () => {
+  const calculator = new Calculator();
+  const sumSpy = jest.spyOn(calculator, "sum");
+  const result = calculator.sum(1, 2);
+
+  expect(result).toBe(3);
+
+  // 実際に実行されているのはcalculatorだけど、sumspyはその実行を見ている
+  expect(sumSpy).toHaveBeenCalledTimes(1);
+  expect(sumSpy).toHaveBeenCalledWith(1, 2);
+
+  // テスト終了後はスパイが他のテストに影響しないように解除することが推奨される。afterEachでやるのがいい手になる
+  sumSpy.mockRestore();
+});
+```
+
+### モジュール全体のモック化
+
+モック化は describe や it の中ではなく、その外で行う
+
+```ts
+import fs from "fs";
+import { readFile } from "./mock_module";
+
+// この時点でfsっていう存在自体がすでにmock化されている
+jest.mock("fs");
+
+// だけど、コンパイラはそれを知ることができないのでそのままだとmockReturnValueにfs.readSyncから呼び出せることを知らない。
+// そこで、mockFsを作成してそこからmockReturnValueを読んでreadFileSyncのレスポンスをモックする
+const mockFs = jest.mocked(fs);
+mockFs.readFileSync.mockReturnValue("dummy data");
+
+it("readFileがデータを返却する", () => {
+  const result = readFile("path/dummy");
+  expect(result).toBe("dummy data");
+  expect(fs.readFileSync).toHaveBeenCalledTimes(1);
+});
+```
+
+### 演習
+
+```ts
+import axios from "axios";
+import Users from "./practice";
+
+jest.mock("axios");
+const mockAxios = jest.mocked(axios);
+
+describe("Users", () => {
+  beforeEach(() => {
+    mockAxios.get.mockClear();
+  });
+
+  it("ユーザーを取得できる", async () => {
+    const users = [{ name: "Taro" }, { name: "Hanako" }];
+    const res = { data: users };
+    mockAxios.get.mockResolvedValue(res);
+
+    const result = await Users.all();
+    expect(result).toEqual(users);
+    expect(mockAxios.get).toHaveBeenCalledWith("/users.json");
+  });
+});
+```
