@@ -676,3 +676,218 @@ UI のテストは
 の順に構成される。
 
 これに慣れていこう
+
+## Storybook とビジュアルリグレッションテスト
+
+### storybook の概要
+
+storybook:
+アプリケーションと UI コンポーネントを切り離し、独立した状態でコンポーネントの開発を行うことができるオープンソースツール
+
+開発した UI コンポーネントをカタログとして管理
+
+一つのコンポーネントに対して複数の状態を登録することができる。
+一つ一つの状態のことを Story と呼ぶ
+
+[メリット]
+
+アプリケーションを実行せずに UI コンポーネントの開発が可能
+
+開発した UI コンポーネントの確認や再利用が行いやすく開発効率の向上に寄与する
+
+UI コンポーネントのデザインや動作を共有でき、エンジニアとデザイナーの認識齟齬を減らすことができる
+
+UI の変更に対してビジュラルリグレッションテストを実施できる
+
+[デメリット]
+
+導入にそれなりにコストがかかる
+
+メンテナンスのコストもかかる
+
+→ ストーリーへの登録を共通コンポーネントや重要なコンポーネントに限定することで軽減する
+
+### storybook のセットアップ
+
+下記のコマンドで現在のプロジェクト設定に対して最適なストーリーブックの設定が入る
+
+```
+npx sb@7 init
+```
+
+空のプロジェクトに対してこのコマンドを実行すると対話形式でインストールされる
+
+main.ts
+
+```ts
+// なにをstorybookの対象にするか
+stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
+// プロジェクトのフレームワークが記載
+  framework: {
+    name: "@storybook/react-vite",
+```
+
+preview.ts
+
+全てのストーリーに適用する設定が書かれる
+
+### コンポーネントストーリーの作成
+
+Button コンポーネントに対して、二つのストーリーを作成
+
+meta には Button コンポーネント全体の設定
+
+```ts
+import Button from "./Button";
+import type { Meta, StoryObj } from "@storybook/react";
+
+const meta = {
+  title: "Button",
+  component: Button,
+} as Meta<typeof Button>;
+
+export default meta;
+
+type Story = StoryObj<typeof Button>;
+
+export const Primary: Story = {
+  args: {
+    label: "Primaryボタン",
+    primary: true,
+  },
+};
+
+export const Normal: Story = {
+  args: {
+    label: "Normalボタン",
+    primary: false,
+  },
+};
+```
+
+### story のコントロールとアクション
+
+controll
+→props の内容を変更したり制限できる
+
+```ts
+const meta = {
+  title: "Button",
+  component: Button,
+  argTypes: {
+    label: {
+      options: ["Primaryボタン", "Normalボタン"],
+      control: { type: "select" },
+    },
+  },
+} as Meta<typeof Button>;
+```
+
+actions
+→ コンポーネントに渡されたイベントハンドラーがどんな動きをしているかを確認するための機能
+
+操作バーのアクションズから確認する
+
+### storybook を利用したインタラクションテスト
+
+play function を使う
+
+```
+npm i -D @storybook/jest
+```
+
+```ts
+import { Meta, StoryObj } from "@storybook/react";
+import Form from "./Form";
+import { within } from "@storybook/testing-library";
+import { expect } from "@storybook/jest";
+import { userEvent } from "@storybook/testing-library";
+
+const meta = {
+  title: "Form",
+  component: Form,
+} as Meta<typeof Form>;
+
+export default meta;
+
+type Story = StoryObj<typeof Form>;
+
+export const Default: Story = {};
+
+export const Testing: Story = {
+  play: async ({ canvasElement }) => {
+    // このcanvasはreact testing libのscreenに似ているよ
+    const canvas = within(canvasElement);
+    const input = canvas.getByRole("textbox");
+    await expect(input).toHaveTextContent("");
+    await userEvent.type(input, "play function");
+    await expect(canvas.getByDisplayValue("play function")).toBeInTheDocument();
+  },
+};
+```
+
+intaractions をみて、テストがすでに実行されてパスされている
+
+storybook を使って testing library と同じような感覚でテストを書くことができる
+
+testing library と storybook で同じことをテストする必要はない
+
+まずは testing library でできないかを検討しよう
+
+storybook はモックができない。でも視覚的に確認しながらテストが作れるのは嬉しいね
+
+### ビジュラルリグレッションテストの概要
+
+アプリケーションの変更前後で画面のスクリーンショットを取得し、画像の差分比較を行うことで意図せぬ変更が生じていないかを検証するテスト
+
+アプリケーションのロジックのテストというよりデザインのテスト
+
+スナップショットテストは dom をみてる。ビジュラルリグレッションテストは画像を見てる
+
+動作：
+基準となるスクリーンショットを取得
+変更後のスクリーンショットを取得
+2 つのスクショを比較して差分を検出
+
+[メリット]
+
+差分チェックが簡単に行える(px 単位でみれる)
+
+デザインレビューが容易になる
+
+テストツール
+
+reg-suit + Storycap
+→ これが一番よく使われる
+
+Chromatic
+→ クラウドサービス。導入が一番簡単
+
+Playwright
+→E2E で有名だけど、ビジュラルリグレッションもできる
+
+Chromatic の概要
+クラウドサービス
+Storybook のメンテナーが開発・メンテナンスしている
+デザインに対するコメント、承認フローなど豊富な機能
+5000 スナップショット/月まで無料で使用できる
+
+### ビジュラルリグレッションテストの準備
+
+Chromatic を使う
+
+https://www.chromatic.com/
+
+git 管理されているプロジェクトである必要があるので git init から
+
+公式サイトからアカウントを作成
+
+プロジェクトを chromatic に登録
+
+storybook を publish するためのコマンドを実行
+
+publish できると chromatic の画面に作成した storybook が見れる
+
+### 演習
+
+Counter
