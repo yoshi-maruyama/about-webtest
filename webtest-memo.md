@@ -393,6 +393,7 @@ const mockAxios = jest.mocked(axios);
 
 describe("Users", () => {
   beforeEach(() => {
+    // テストの中でaxiosのgetの戻り値を変更するので、それが他のテストに影響しないようにクリアしている
     mockAxios.get.mockClear();
   });
 
@@ -407,3 +408,271 @@ describe("Users", () => {
   });
 });
 ```
+
+## UI テスト
+
+### UI テストの概要
+
+ロジックに関するテストもあるけど、
+
+主に見た目やユーザーの操作感にフォーカスしたテストを行う
+
+検証内容：
+
+コンポーネントが意図通りのデザインになっているか
+
+ボタンクリックしたり入力したときのアプリケーションの反応が正しいか
+
+コンポーネントが生成されてから終了するまでが予想通りか（状態変数の変化とか）
+
+props が正確な伝達になっているか
+
+テストの種類
+
+ユニットテスト
+→ 個々のコンポーネントや react のフックが期待通りか
+
+スナップショットテスト
+→ コンポーネントのレンダリング結果に意図しない変更がないかを検証(jest, react testing library)
+
+ビジュアルリグレッションテスト
+→ 画面に表示された UI のスクリーンショットに意図しない変更がないかを検証（storybook, chromatic）
+
+E2E テスト
+→ アプリケーション全体をブラウザ上で動作させ、ユーザーの操作をシュミレートして検証(playwright)
+
+### react 環境のセットアップ
+
+```
+npm create vite @latest
+
+cd ui-test-lesson
+
+npm run dev
+```
+
+### React testing library
+
+jest だけだと機能が不足しているのでこのライブラリも入れる。
+
+react testing library とはいうけど、vue や angular でも使えるよ
+
+```
+npm i -D jest @types/jest ts-jest
+npm i -D jest-environment-jsdom @testing-library/react @testing-library/jest-dom @testing-library/user-event
+
+npx ts-jest config:init
+```
+
+### React testing library のセットアップ
+
+jest.setup.ts
+jest.config.js
+tsconfig.app.json
+とかにいろいろ設定を入れていくよ
+
+### react testing library の基礎
+
+```ts
+import { render, screen } from "@testing-library/react";
+import Button from "./Button";
+
+describe("Button", () => {
+  it("buttonタグがレンダリングされる", () => {
+    render(<Button label="button" onClick={() => alert("click")} />);
+
+    const element = screen.getByRole("button");
+    // buttonのdomが画面にあること
+    expect(element).toBeInTheDocument();
+    // buttonの中にbuttonの文字があること
+    expect(element).toHaveTextContent("button");
+  });
+});
+```
+
+### ユーザーイベントのテスト
+
+userEvent.setup()からイベント操作するためのインスタンスを作成
+
+user.click や type は非同期処理なので注意してね
+
+```ts
+const user = userEvent.setup();
+
+it("入力したテキストがサブミットされる", async () => {
+  // alertを確認するにはspyを使うと便利
+  const alertSpy = jest.spyOn(window, "alert").mockReturnValue();
+
+  render(<Form />);
+  const input = screen.getByPlaceholderText("Enter text");
+  await user.type(input, "Test Text");
+  // getByDisplayValue: 指定の文字がある要素を取得する
+  expect(screen.getByDisplayValue("Test Text")).toBeInTheDocument();
+
+  const button = screen.getByRole("button");
+  await user.click(button);
+
+  expect(alertSpy).toHaveBeenCalledWith("submitted: Test Text");
+
+  alertSpy.mockRestore();
+});
+```
+
+### 非同期 UI のテスト
+
+waitFor を使って所定の時間だけ、なんどもリトライをして結果を確認し続けることで、非同期の処理をテストする
+
+```ts
+const user = userEvent.setup();
+
+describe("AsyncComponent", () => {
+  it("ボタンをクリックすると非同期処理が実行される", async () => {
+    render(<AsyncComponent />);
+    expect(screen.getByText("Initial text")).toBeInTheDocument();
+
+    const button = screen.getByRole("button");
+    await user.click(button);
+
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+
+    // expect(screen.getByText("Updated text")).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(screen.getByText("Updated text")).toBeInTheDocument();
+      },
+      // 50ms間隔で期待の結果になっているか。3000msでタイムアウト
+      { interval: 50, timeout: 3000 }
+    );
+  });
+});
+```
+
+waitFor を使うことで、どうしてもテストの時間は長くなってくる。
+
+本当にテストする必要があるか？をよく考えていこう
+
+### フックのテスト
+
+カスタムフックをテストする
+
+フックのテストには renderHook を使うよ
+
+renderHook は result を返し、その result は current の中に useCounter が本来返していたものを受け取っている
+
+なので、result.current.`何か`で変数やメソッドを実行して動作を見ることになる
+
+ただし、そのまま increment しても current には反映されないので、act 関数の callback の中でメソッドを実行する必要がある
+
+```ts
+import { act, renderHook } from "@testing-library/react";
+import useCounter from "./useCounter";
+
+describe("useCounter", () => {
+  it("increment", () => {
+    const { result } = renderHook(() => useCounter(1));
+
+    expect(result.current.count).toBe(1);
+
+    act(() => result.current.increment());
+    expect(result.current.count).toBe(2);
+  });
+});
+```
+
+### スナップショットテスト
+
+testing library というより jest 側の機能
+
+特定のコンポーネントのレンダリング結果を記録して、変更がされていないかを検証する
+
+まず初めにスナップショットを作成して、次回以降はそのスナップショットがあればそれと比較する
+
+初回実行にそのテストファイルと同じ階層に`__snapshots__`のディレクトリが作成される
+
+スナップショットがちゃんと更新されて欲しいときはオプションをつけることで更新される
+
+```
+npm test src/components/SnapshotComponent.test.tsx -- --u
+```
+
+更新するときは本当に意図通りかに関わらず更新されるので、更新するときは注意してね
+
+また、これはチームで開発するときはみんなで同じスナップショットを使わないといけないので、git の管理対象にすること
+
+```ts
+import { render } from "@testing-library/react";
+import SnapshotComponent from "./SnapshotComponent";
+
+it("Snapshotテスト", () => {
+  const { container } = render(<SnapshotComponent text="Vue" />);
+  expect(container).toMatchSnapshot();
+});
+```
+
+### 演習
+
+```ts
+import { render, screen, waitFor } from "@testing-library/react";
+import { UserSearch } from "./UserSearch";
+import userEvent from "@testing-library/user-event";
+import axios from "axios";
+
+const user = userEvent.setup();
+jest.mock("axios");
+const mockAxios = jest.mocked(axios);
+
+describe("UserSearch", () => {
+  beforeEach(() => {
+    // テストの中でaxiosのgetの戻り値を変更するので、それが他のテストに影響しないようにクリアしている
+    mockAxios.get.mockReset();
+  });
+
+  it("入力したフォームに入力した内容でAPIリクエストが送信される", async () => {
+    const userInfo = {
+      id: 1,
+      name: "Taro",
+    };
+    const resp = { data: userInfo };
+    mockAxios.get.mockResolvedValue(resp);
+
+    render(<UserSearch />);
+
+    const input = screen.getByRole("textbox");
+    await user.type(input, userInfo.name);
+    const button = screen.getByRole("button");
+    await user.click(button);
+
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      `/api/users?query=${userInfo.name}`
+    );
+  });
+
+  it("APIから取得したユーザー情報が画面に表示される", async () => {
+    const userInfo = {
+      id: 1,
+      name: "Taro",
+    };
+    const resp = { data: userInfo };
+    mockAxios.get.mockResolvedValue(resp);
+
+    render(<UserSearch />);
+
+    const input = screen.getByRole("textbox");
+    await user.type(input, userInfo.name);
+    const button = screen.getByRole("button");
+    await user.click(button);
+
+    waitFor(() => {
+      expect(screen.getByText(userInfo.name)).toBeInTheDocument();
+    });
+  });
+});
+```
+
+UI のテストは
+
+テストの準備、レンダリング、レンダリング要素の取得、ユーザー操作、アサーション
+
+の順に構成される。
+
+これに慣れていこう
