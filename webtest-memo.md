@@ -891,3 +891,76 @@ publish できると chromatic の画面に作成した storybook が見れる
 ### 演習
 
 Counter
+
+## バックエンドの開発とテスト
+
+controllers
+
+services
+
+repository
+
+の 3 層構造
+
+### リポジトリクラスのテスト
+
+リポジトリはデータの永続化を行うところ
+
+テストの保身は実際のデータストアにはアクセスせずデータストアと接続するライブラリをモック化し、
+その戻り値が適切か、モックのメソッドが呼び出されているかを確認する
+
+groupRepository.test.ts
+
+### ロジックのテスト
+
+utils に割り勘に関してのロジックがある
+これのテスト
+
+割り勘はロジックにすると結構複雑だけど、例外とかの分岐がないため、
+テストは正常系の一本で、入力と出力の担保ができているでオッケー
+
+### サービスクラスのテスト
+
+expenseService.ts をテストする
+
+ExpenseRepository と GroupService に依存している
+
+これらを mock にして ExpsenseService に渡すことでテストを行う
+
+Partial とはの TS が提供している型をユーティリティっていうよ
+https://www.typescriptlang.org/docs/handbook/utility-types.html
+
+### コントローラクラスのテスト
+
+GroupController addGroup メソッド をテストする
+
+GroupService に依存するのでこれを mock する
+
+また、express の req, res, next を使っているので、これも mock する
+
+groupSchema.parse(req.body)は zod でバリデーションしている
+
+### 結合テスト
+
+上記までが単体テスト。
+
+依存部分を mock している。
+
+backend/test/integration.spec.ts を作成
+
+test で API エンドポイントにリクエストを送り、routes がリクエストの path から適切なコントローラを呼び出し、サービス、リポジトリへと処理が流れることを確認したい
+
+supertest をインストールする
+
+```
+npm i -D supertest @types/supertest
+```
+
+supertest でテストを行うときは createApp と app.listen の処理を分離するのが大切
+createApp の中で listen をしてしまうと、処理が終了せずにテストも終了しなくなってしまう。（app.ts と index.ts）
+
+まとめ
+
+単体テストとかで関数自体にロジックがなく、依存先のロジックを呼び出してその戻り値をそのまま返すだけのパターンもある。このうような関数にテストを書く意味は薄いので、省略するパターンもあるよ
+
+単体テストを減らして結合テストの比率を増やす戦略もある。絶対的な正解はないよ
