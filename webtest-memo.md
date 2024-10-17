@@ -1001,3 +1001,123 @@ frontend/mock/handler.ts を作成して、ここにダミーの http エンド�
 ### ビジュアルリグレッションテスト
 
 chromatic を使ったテスト
+
+## E2E テスト
+
+### E2E テストの概要
+
+実際にユーザーが利用するシナリオに基づき、システムの最初から最後までが想定通りの動作となっているかを検証するテスト
+
+ページ読み込み → ユーザーの UI 操作 → バックエンドとの通信 → データベースやファイルへのアクセス
+
+システム全体が連携して正しく動作するかを確認する
+
+広い観点でのテストをカバー
+
+[デメリット]
+
+実行に時間がかかる
+テストのメンテナンス工数がかかりやすい
+ユーザーの視点でのテストを設計する
+
+ツール
+
+クラウドサービス型：
+Autify, mabl
+
+オープンソース型
+selenium, peppeteer, cypress, playwright
+
+playwright の概要
+
+microsoft によって開発されたフレームワーク
+複数のブラウザをサポート
+完結な API で直感的な web ページを操作できる
+比較的高速（並列実行とか）
+テストの自動生成ができる
+
+### playwright のセットアップ
+
+frontend の中でおこなう
+
+```
+npm init playwright@latest
+
+✔ Where to put your end-to-end tests? · e2e
+✔ Add a GitHub Actions workflow? (y/N) · false
+✔ Install Playwright browsers (can be done manually via 'npx playwright install')? (Y/n) · true
+```
+
+インストールができると e2e ディレクトリや test-examples ディレクトリの中にサンプルのコードができる。
+playwright.config.ts が作成される（どのブラウザで実行するかの設定がある。今回はこれを chromium に限定）
+package.json に実行用のスクリプトをいれる
+
+### playwright の基本操作
+
+```sh
+# テストを実行
+npm run playwright
+
+# 実行結果をGUIでみる
+npm run playwright:report
+
+# テストをGUIからインタラクティブに実行できるモード
+npm run playwright:ui
+```
+
+デフォルトはヘッドレスモード（ブラウザを見せずに裏でテストする）
+この方が高速だけど、見ながらテストしたい場合もあるはず。
+その場合、`npm run playwright -- --headed`
+
+### playwright を使った e2e テストの書き方
+
+大枠は react testing library と同じ
+
+@playwright/test の test から describe や beforeEAch を実行する
+
+page が ui を操作したり dom 要素を取るもの、screen に近い。でもこれをコールバック関数から受け取る
+
+expect がアサーションになるけど、jest じゃないよ
+
+```ts
+import { test, expect, type Page } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('https://demo.playwright.dev/todomvc');
+});
+
+const TODO_ITEMS = [
+  'buy some cheese',
+  'feed the cat',
+  'book a doctors appointment'
+] as const;
+
+test.describe('New Todo', () => {
+  test('should allow me to add todo items', async ({ page }) => {
+    // create a new todo locator
+    const newTodo = page.getByPlaceholder('What needs to be done?');
+
+    // Create 1st todo.
+    await newTodo.fill(TODO_ITEMS[0]);
+    await newTodo.press('Enter');
+
+    // Make sure the list only has one todo item.
+    await expect(page.getByTestId('todo-title')).toHaveText([
+      TODO_ITEMS[0]
+    ]);
+  }
+}
+  }
+```
+
+### e2e テストの準備
+
+playwright は実際にデータを操作するので、テスト準備の段階での初期化をしっかりしていないと、予期しない結果になることがあるので注意
+
+backend は e2e をするための start コマンドがある。これによって環境変数と data の出力先をいじってる
+
+### グループ作成機能の e2e テスト
+
+warikan-app.spec.ts
+
+あと細かいところはドキュメントをみてキャッチアップしてね
